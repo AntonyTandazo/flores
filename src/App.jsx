@@ -5,7 +5,7 @@ import { useMusica } from './componentes/audio/useMusica'
 
 function App() {
   const [paso, setPaso] = useState(1)
-  const musica = useMusica()
+  const musica = useMusica(paso)
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-black">

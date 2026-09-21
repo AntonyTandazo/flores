@@ -2,63 +2,55 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Howl } from 'howler'
 
 const TRACKS = [
-  { id: 1, src: '/music/Sonrrisas.mp3', label: 'Sonrrisas' },
-  { id: 2, src: '/music/quien-eres.mp3', label: 'Quien eres' },
-  { id: 3, src: '/music/juanes-me-enamora.mp3', label: 'Juanes Me Enamora' },
+  { id: 1, src: import.meta.env.BASE_URL + 'music/Sonrrisas.mp3', label: 'Sonrrisas' },
+  { id: 2, src: import.meta.env.BASE_URL + 'music/quien-eres.mp3', label: 'Quien eres' },
+  { id: 3, src: import.meta.env.BASE_URL + 'music/juanes-me-enamora.mp3', label: 'Juanes Me Enamora' },
 ]
 
-export function useMusica() {
+const FADE_MS = 1000
+
+export function useMusica(paso) {
   const [reproduciendo, setReproduciendo] = useState(false)
   const [volumen, setVolumen] = useState(0.3)
-  const [pistaActual, setPistaActual] = useState(0)
-  
-  const currentHowlRef = useRef(null)
+  const howlRef = useRef(null)
+  const prevHowlRef = useRef(null)
+  const initializedRef = useRef(false)
+  const trackIdxRef = useRef(0)
 
   useEffect(() => {
-    if (currentHowlRef.current) {
-      currentHowlRef.current.unload()
-    }
-
-    const t = TRACKS[pistaActual]
-    
-    const h = new Howl({
-      src: [t.src],
-      html5: true,
-      volume: volumen,
-      // Solo hacer autoplay si ya estábamos reproduciendo (cambio de pista)
-      autoplay: reproduciendo, 
-      onplay: () => setReproduciendo(true),
-      onpause: () => setReproduciendo(false),
-      onstop: () => setReproduciendo(false),
-      onend: () => {
-        setPistaActual((prev) => (prev + 1) % TRACKS.length)
-      }
-    })
-
-    currentHowlRef.current = h
-
     return () => {
-      h.unload()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pistaActual])
-
-  useEffect(() => {
-    if (currentHowlRef.current) {
-      currentHowlRef.current.volume(volumen)
-    }
-  }, [volumen])
-
-  const reproducir = useCallback(() => {
-    if (currentHowlRef.current && !currentHowlRef.current.playing()) {
-      currentHowlRef.current.play()
+      if (howlRef.current) { howlRef.current.stop(); howlRef.current.unload() }
+      if (prevHowlRef.current) { prevHowlRef.current.stop(); prevHowlRef.current.unload() }
     }
   }, [])
 
+  const crearHowl = useCallback((idx) => {
+    return new Howl({
+      src: [TRACKS[idx].src],
+      html5: true,
+      loop: true,
+      volume: 0,
+    })
+  }, [])
+
+  const reproducir = useCallback(() => {
+    if (howlRef.current && howlRef.current.playing()) return
+
+    const idx = trackIdxRef.current
+    const h = crearHowl(idx)
+    h.volume(volumen)
+    h.play()
+    howlRef.current = h
+
+    setReproduciendo(true)
+    initializedRef.current = true
+  }, [volumen, crearHowl])
+
   const pausar = useCallback(() => {
-    if (currentHowlRef.current) {
-      currentHowlRef.current.pause()
+    if (howlRef.current) {
+      howlRef.current.pause()
     }
+    setReproduciendo(false)
   }, [])
 
   const toggle = useCallback(() => {
@@ -69,11 +61,43 @@ export function useMusica() {
     }
   }, [reproduciendo, reproducir, pausar])
 
+  useEffect(() => {
+    const idx = Math.max(0, Math.min(paso - 1, TRACKS.length - 1))
+    if (idx === trackIdxRef.current && howlRef.current) return
+
+    const wasPlaying = initializedRef.current && howlRef.current && howlRef.current.playing()
+    trackIdxRef.current = idx
+
+    if (!initializedRef.current) return
+
+    const viejo = howlRef.current
+    if (viejo && viejo.playing()) {
+      viejo.fade(viejo.volume(), 0, FADE_MS)
+      prevHowlRef.current = viejo
+      setTimeout(() => {
+        if (prevHowlRef.current === viejo) {
+          viejo.stop()
+          viejo.unload()
+          prevHowlRef.current = null
+        }
+      }, FADE_MS + 100)
+    } else if (viejo) {
+      viejo.stop()
+      viejo.unload()
+    }
+
+    const nuevo = crearHowl(idx)
+    nuevo.volume(0)
+    if (wasPlaying) nuevo.play()
+    nuevo.fade(0, volumen, wasPlaying ? FADE_MS : 0)
+    howlRef.current = nuevo
+  }, [paso, volumen, crearHowl])
+
   return {
     reproduciendo,
     volumen,
     setVolumen,
-    pistaActual: TRACKS[pistaActual]?.label ?? '',
+    pistaActual: TRACKS[trackIdxRef.current]?.label ?? '',
     toggle,
     reproducir,
     pausar,
